@@ -42,6 +42,24 @@ func Min(l, r *api.Resource) *api.Resource {
 
 	return res
 }
+// Max is used to find the max of two resource types
+func Max(l, r *api.Resource) *api.Resource {
+	res := &api.Resource{}
+
+	res.MilliCPU = math.Max(l.MilliCPU, r.MilliCPU)
+	res.Memory = math.Max(l.Memory, r.Memory)
+
+	if l.ScalarResources == nil || r.ScalarResources == nil {
+		return res
+	}
+
+	res.ScalarResources = map[v1.ResourceName]float64{}
+	for lName, lQuant := range l.ScalarResources {
+		res.ScalarResources[lName] = math.Max(lQuant, r.ScalarResources[lName])
+	}
+
+	return res
+}
 
 // Share is used to determine the share
 func Share(l, r float64) float64 {

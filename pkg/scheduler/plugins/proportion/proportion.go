@@ -52,6 +52,7 @@ type queueAttr struct {
 	// inqueue represents the resource request of the inqueue job
 	inqueue    *api.Resource
 	capability *api.Resource
+	guarantee  *api.Resource
 }
 
 // New return proportion action
@@ -72,7 +73,7 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 	pp.totalResource.Add(ssn.TotalResource)
 
 	klog.V(4).Infof("The total resource is <%v>", pp.totalResource)
-
+	totalGuarantee := api.EmptyResource()
 	// Build attributes for Queues.
 	for _, job := range ssn.Jobs {
 		klog.V(4).Infof("Considering Job <%s/%s>.", job.Namespace, job.Name)
@@ -87,11 +88,15 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 				allocated: api.EmptyResource(),
 				request:   api.EmptyResource(),
 				inqueue:   api.EmptyResource(),
+				guarantee : api.EmptyResource(),
 			}
 			if len(queue.Queue.Spec.Capability) != 0 {
 				attr.capability = api.NewResource(queue.Queue.Spec.Capability)
 			}
-
+			if len(queue.Queue.Spec.Guarantee.Resource) != 0 {
+				attr.guarantee = api.NewResource(queue.Queue.Spec.Guarantee.Resource)
+				totalGuarantee.Add(attr.guarantee)
+			}
 			pp.queueOpts[job.Queue] = attr
 			klog.V(4).Infof("Added Queue <%s> attributes.", job.Queue)
 		}
@@ -112,6 +117,19 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 
 		if job.PodGroup.Status.Phase == scheduling.PodGroupInqueue {
 			attr.inqueue.Add(job.GetMinResources())
+		}
+	}
+
+	// fix attr.capability
+	if !totalGuarantee.IsEmpty() {
+		for _, attr := range pp.queueOpts {
+			otherQueueGuarantee := totalGuarantee.Clone().Sub(attr.guarantee)
+			maxAvailableOfQueue := pp.totalResource.Clone().Sub(otherQueueGuarantee)
+			if attr.capability == nil {
+				attr.capability = maxAvailableOfQueue
+			} else {
+				attr.capability = helpers.Min(attr.capability, maxAvailableOfQueue)
+			}
 		}
 	}
 
@@ -164,10 +182,12 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 				attr.deserved = helpers.Min(attr.deserved, attr.capability)
 				attr.deserved = helpers.Min(attr.deserved, attr.request)
 				meet[attr.queueID] = struct{}{}
+				attr.deserved = helpers.Max(attr.deserved, attr.guarantee)
 				klog.V(4).Infof("queue <%s> is meet cause of the capability", attr.name)
 			} else if attr.request.LessEqual(attr.deserved, api.Zero) {
 				attr.deserved = helpers.Min(attr.deserved, attr.request)
 				meet[attr.queueID] = struct{}{}
+				attr.deserved = helpers.Max(attr.deserved, attr.guarantee)
 				klog.V(4).Infof("queue <%s> is meet", attr.name)
 			} else {
 				attr.deserved.MinDimensionResource(attr.request)
