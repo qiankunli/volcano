@@ -49,13 +49,23 @@ func Max(l, r *api.Resource) *api.Resource {
 	res.MilliCPU = math.Max(l.MilliCPU, r.MilliCPU)
 	res.Memory = math.Max(l.Memory, r.Memory)
 
-	if l.ScalarResources == nil || r.ScalarResources == nil {
+	if l.ScalarResources == nil && r.ScalarResources == nil {
 		return res
 	}
-
 	res.ScalarResources = map[v1.ResourceName]float64{}
-	for lName, lQuant := range l.ScalarResources {
-		res.ScalarResources[lName] = math.Max(lQuant, r.ScalarResources[lName])
+	if l.ScalarResources != nil && r.ScalarResources == nil{
+		for lName, lQuant := range l.ScalarResources {
+			if lQuant > 0 {
+				res.ScalarResources[lName] = lQuant
+			}
+		}
+	}
+	if l.ScalarResources == nil && r.ScalarResources != nil{
+		for rName, rQuant := range r.ScalarResources {
+			if rQuant > 0 {
+				res.ScalarResources[rName] = rQuant
+			}
+		}
 	}
 
 	return res
