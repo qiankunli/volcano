@@ -101,17 +101,15 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 			}
 			if len(queue.Queue.Spec.Capability) != 0 {
 				attr.capability = api.NewResource(queue.Queue.Spec.Capability)
-				attr.realCapability = attr.capability
 			}
 			if len(queue.Queue.Spec.Guarantee.Resource) != 0 {
 				attr.guarantee = api.NewResource(queue.Queue.Spec.Guarantee.Resource)
-				attr.deserved = attr.guarantee
-				realCapability := pp.totalGuarantee.Clone().Sub(attr.guarantee)
-				if attr.capability == nil {
-					attr.realCapability = realCapability
-				} else {
-					attr.realCapability = helpers.Min(realCapability, attr.capability)
-				}
+			}
+			realCapability := pp.totalResource.Clone().Sub(pp.totalGuarantee.Clone().Sub(attr.guarantee))
+			if attr.capability == nil {
+				attr.realCapability = realCapability
+			} else {
+				attr.realCapability = helpers.Min(realCapability, attr.capability)
 			}
 			pp.queueOpts[job.Queue] = attr
 			klog.V(4).Infof("Added Queue <%s> attributes.", job.Queue)
@@ -197,8 +195,8 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 			attr.deserved = helpers.Max(attr.deserved,attr.guarantee)
 			pp.updateShare(attr)
 
-			klog.V(4).Infof("The attributes of queue <%s> in proportion: deserved <%v>, capability <%v>, allocate <%v>, request <%v>, share <%0.2f>",
-				attr.name, attr.deserved, attr.capability, attr.allocated, attr.request, attr.share)
+			klog.V(4).Infof("The attributes of queue <%s> in proportion: deserved <%v>, realCapability <%v>, allocate <%v>, request <%v>, share <%0.2f>",
+				attr.name, attr.deserved, attr.realCapability, attr.allocated, attr.request, attr.share)
 
 			increased, decreased := attr.deserved.Diff(oldDeserved, api.Zero)
 			increasedDeserved.Add(increased)
