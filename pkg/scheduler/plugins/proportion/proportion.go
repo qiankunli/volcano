@@ -51,9 +51,10 @@ type queueAttr struct {
 	allocated *api.Resource
 	request   *api.Resource
 	// inqueue represents the resource request of the inqueue job
-	inqueue    *api.Resource
-	capability *api.Resource
-	guarantee  *api.Resource
+	inqueue        *api.Resource
+	capability     *api.Resource
+	realCapability *api.Resource
+	guarantee      *api.Resource
 }
 
 // New return proportion action
@@ -100,9 +101,17 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 			}
 			if len(queue.Queue.Spec.Capability) != 0 {
 				attr.capability = api.NewResource(queue.Queue.Spec.Capability)
+				attr.realCapability = attr.capability
 			}
 			if len(queue.Queue.Spec.Guarantee.Resource) != 0 {
 				attr.guarantee = api.NewResource(queue.Queue.Spec.Guarantee.Resource)
+				attr.deserved = attr.guarantee
+				realCapability := pp.totalGuarantee.Clone().Sub(attr.guarantee)
+				if attr.capability == nil {
+					attr.realCapability = realCapability
+				} else {
+					attr.realCapability = helpers.Min(realCapability, attr.capability)
+				}
 			}
 			pp.queueOpts[job.Queue] = attr
 			klog.V(4).Infof("Added Queue <%s> attributes.", job.Queue)
@@ -121,23 +130,8 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 				}
 			}
 		}
-
 		if job.PodGroup.Status.Phase == scheduling.PodGroupInqueue {
 			attr.inqueue.Add(job.GetMinResources())
-		}
-	}
-
-	// set attr.capability by Guarantee
-	if !pp.totalGuarantee.IsEmpty() {
-		for _, attr := range pp.queueOpts {
-			otherQueueGuarantee := pp.totalGuarantee.Clone().Sub(attr.guarantee)
-			maxAvailableOfQueue := pp.totalResource.Clone().Sub(otherQueueGuarantee)
-			if attr.capability == nil {
-				attr.capability = maxAvailableOfQueue
-			} else {
-				attr.capability = helpers.Min(attr.capability, maxAvailableOfQueue)
-			}
-			klog.V(4).Infof("queue <%s> guarantee <%v> real capability <%v>", attr.name, attr.guarantee, attr.capability)
 		}
 	}
 
@@ -187,21 +181,20 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 			delta := remaining.Clone().Multi(float64(attr.weight) / float64(totalWeight))
 			klog.V(4).Infof("queue <%s> remaining <%v>, delta <%v>", attr.name, remaining, delta)
 			attr.deserved.Add(delta)
-			if attr.capability != nil && !attr.deserved.LessEqual(attr.capability, api.Infinity) {
-				attr.deserved = helpers.Min(attr.deserved, attr.capability)
+			if attr.realCapability != nil && !attr.deserved.LessEqual(attr.realCapability, api.Infinity) {
+				attr.deserved = helpers.Min(attr.deserved, attr.realCapability)
 				attr.deserved = helpers.Min(attr.deserved, attr.request)
 				meet[attr.queueID] = struct{}{}
-				attr.deserved = helpers.Max(attr.deserved, attr.guarantee)
 				klog.V(4).Infof("queue <%s> is meet cause of the capability", attr.name)
 			} else if attr.request.LessEqual(attr.deserved, api.Zero) {
 				attr.deserved = helpers.Min(attr.deserved, attr.request)
 				meet[attr.queueID] = struct{}{}
-				attr.deserved = helpers.Max(attr.deserved, attr.guarantee)
 				klog.V(4).Infof("queue <%s> is meet", attr.name)
 			} else {
 				attr.deserved.MinDimensionResource(attr.request)
 				klog.V(4).Infof("Format queue <%s> deserved resource to <%v>", attr.name, attr.deserved)
 			}
+			attr.deserved = helpers.Max(attr.deserved,attr.guarantee)
 			pp.updateShare(attr)
 
 			klog.V(4).Infof("The attributes of queue <%s> in proportion: deserved <%v>, capability <%v>, allocate <%v>, request <%v>, share <%0.2f>",
@@ -255,7 +248,6 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 					reclaimee.Namespace, reclaimee.Name, job.Queue)
 				continue
 			}
-
 			if !allocated.LessEqual(attr.deserved, api.Zero) {
 				allocated.Sub(reclaimee.Resreq)
 				victims = append(victims, reclaimee)
@@ -307,7 +299,7 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 		attr := pp.queueOpts[queueID]
 		queue := ssn.Queues[queueID]
 		// If no capability is set, always enqueue the job.
-		if len(queue.Queue.Spec.Capability) == 0 && attr.capability == nil {
+		if attr.realCapability == nil {
 			klog.V(4).Infof("Capability of queue <%s> was not set, allow job <%s/%s> to Inqueue.",
 				queue.Name, job.Namespace, job.Name)
 			return util.Permit
@@ -320,11 +312,11 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 		minReq := job.GetMinResources()
 
 		klog.V(5).Infof("job %s min resource <%s>", job.Name, minReq.String())
-		klog.V(5).Infof("queue %s capability <%s>", queue.Name, attr.capability.String())
+		klog.V(5).Infof("queue %s capability <%s>", queue.Name, attr.realCapability.String())
 		klog.V(5).Infof("queue %s inqueue <%s>", queue.Name, attr.inqueue.String())
 		klog.V(5).Infof("queue %s allocated <%s>", queue.Name, attr.allocated.String())
 		// The queue resource quota limit has not reached
-		inqueue := minReq.Add(attr.allocated).Add(attr.inqueue).LessEqualWithSeparateDefaultValue(attr.capability, api.Zero, api.Infinity)
+		inqueue := minReq.Add(attr.allocated).Add(attr.inqueue).LessEqual(attr.realCapability, api.Zero)
 		klog.V(5).Infof("job %s inqueue %v", job.Name, inqueue)
 		if inqueue {
 			attr.inqueue.Add(job.GetMinResources())
