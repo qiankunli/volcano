@@ -349,41 +349,6 @@ func (r *Resource) LessEqual(rr *Resource, defaultValue DimensionDefaultValue) b
 	return true
 }
 
-// LessEqual returns true only on condition that all dimensions of resources in r are less than or equal with that of rr,
-// Otherwise returns false.
-// @param defaultValue "default value for resource dimension not defined in ScalarResources. Its value can only be one of 'Zero' and 'Infinity'"
-func (r *Resource) LessEqualWithSeparateDefaultValue(rr *Resource, leftDefaultValue, rightDefaultValue DimensionDefaultValue) bool {
-	lessEqualFunc := func(l, r, diff float64) bool {
-		if l < r || math.Abs(l-r) < diff {
-			return true
-		}
-		return false
-	}
-
-	leftResource := r.Clone()
-	rightResource := rr.Clone()
-
-	if !lessEqualFunc(leftResource.MilliCPU, rightResource.MilliCPU, minResource) {
-		return false
-	}
-	if !lessEqualFunc(leftResource.Memory, rightResource.Memory, minResource) {
-		return false
-	}
-
-	r.setDefaultValueSeparately(leftResource, rightResource, leftDefaultValue, rightDefaultValue)
-
-	for resourceName, leftValue := range leftResource.ScalarResources {
-		rightValue := rightResource.ScalarResources[resourceName]
-		if rightValue == -1 {
-			continue
-		}
-		if !lessEqualFunc(leftValue, rightValue, minResource) {
-			return false
-		}
-	}
-	return true
-}
-
 // LessPartly returns true if there exists any dimension whose resource amount in r is less than that in rr.
 // Otherwise returns false.
 // @param defaultValue "default value for resource dimension not defined in ScalarResources. Its value can only be one of 'Zero' and 'Infinity'"
@@ -584,38 +549,6 @@ func (r *Resource) setDefaultValue(leftResource, rightResource *Resource, defaul
 			if defaultValue == Zero {
 				leftResource.ScalarResources[resourceName] = 0
 			} else if defaultValue == Infinity {
-				leftResource.ScalarResources[resourceName] = -1
-			}
-		}
-	}
-}
-
-// setDefaultValue sets default value for resource dimension not defined of ScalarResource in leftResource and rightResource
-// @param defaultValue "default value for resource dimension not defined in ScalarResources. It can only be one of 'Zero' or 'Infinity'"
-func (r *Resource) setDefaultValueSeparately(leftResource, rightResource *Resource, leftDefaultValue, rightDefaultValue DimensionDefaultValue) {
-	if leftResource.ScalarResources == nil {
-		leftResource.ScalarResources = map[v1.ResourceName]float64{}
-	}
-	if rightResource.ScalarResources == nil {
-		rightResource.ScalarResources = map[v1.ResourceName]float64{}
-	}
-	for resourceName := range leftResource.ScalarResources {
-		_, ok := rightResource.ScalarResources[resourceName]
-		if !ok {
-			if rightDefaultValue == Zero {
-				rightResource.ScalarResources[resourceName] = 0
-			} else if rightDefaultValue == Infinity {
-				rightResource.ScalarResources[resourceName] = -1
-			}
-		}
-	}
-
-	for resourceName := range rightResource.ScalarResources {
-		_, ok := leftResource.ScalarResources[resourceName]
-		if !ok {
-			if leftDefaultValue == Zero {
-				leftResource.ScalarResources[resourceName] = 0
-			} else if leftDefaultValue == Infinity {
 				leftResource.ScalarResources[resourceName] = -1
 			}
 		}

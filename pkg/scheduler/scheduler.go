@@ -94,7 +94,6 @@ func (pc *Scheduler) runOnce() {
 
 	pc.mutex.Lock()
 	actions := pc.actions
-	klog.V(4).Infof("read actions <%v>", pc.actions)
 	plugins := pc.plugins
 	configurations := pc.configurations
 	pc.mutex.Unlock()
