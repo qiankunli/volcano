@@ -110,7 +110,7 @@ func (op *overcommitPlugin) OnSessionOpen(ssn *framework.Session) {
 		jobQueue := ssn.Queues[job.Queue]
 		guarantee := api.NewResource(jobQueue.Queue.Spec.Guarantee.Resource)
 		costResource := inqueue.Add(jobMinReq)
-		klog.V(5).Infof("Consider job <%s/%s> cost resource <%v> in queue <%v>, guarantee <%v>", job.Namespace, job.Name,costResource,job.Queue,guarantee)
+		klog.V(5).Infof("Consider job <%s/%s> cost resource <%v> in queue <%v>, guarantee <%v>", job.Namespace, job.Name, costResource, job.Queue, guarantee)
 		if costResource.LessEqualPartly(guarantee, api.Zero) {
 			klog.V(4).Infof("Sufficient resources in queue.guarantee, permit job <%s/%s> to be inqueue", job.Namespace, job.Name)
 			return util.Permit

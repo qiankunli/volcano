@@ -65,8 +65,8 @@ var _ = ginkgo.Describe("Guarantee reserved resource E2E Test", func() {
 		defer e2eutil.CleanupTestContext(ctx)
 
 		queue1 := &e2eutil.QueueSpec{
-			Name:              "queue1",
-			Weight:            1,
+			Name:   "queue1",
+			Weight: 1,
 			GuaranteeResource: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("1000m"),
 				corev1.ResourceMemory: resource.MustParse("1024Mi")},

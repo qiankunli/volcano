@@ -192,7 +192,7 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 				attr.deserved.MinDimensionResource(attr.request)
 				klog.V(4).Infof("Format queue <%s> deserved resource to <%v>", attr.name, attr.deserved)
 			}
-			attr.deserved = helpers.Max(attr.deserved,attr.guarantee)
+			attr.deserved = helpers.Max(attr.deserved, attr.guarantee)
 			pp.updateShare(attr)
 
 			klog.V(4).Infof("The attributes of queue <%s> in proportion: deserved <%v>, realCapability <%v>, allocate <%v>, request <%v>, share <%0.2f>",
