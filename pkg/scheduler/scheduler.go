@@ -56,7 +56,7 @@ func NewScheduler(
 	schedulerConf string,
 	period time.Duration,
 	defaultQueue string,
-	workNodeLabel string,
+	workNodeLabels []string,
 ) (*Scheduler, error) {
 	var watcher filewatcher.FileWatcher
 	if schedulerConf != "" {
@@ -71,7 +71,7 @@ func NewScheduler(
 	scheduler := &Scheduler{
 		schedulerConf:  schedulerConf,
 		fileWatcher:    watcher,
-		cache:          schedcache.New(config, schedulerName, defaultQueue, workNodeLabel),
+		cache:          schedcache.New(config, schedulerName, defaultQueue, workNodeLabels),
 		schedulePeriod: period,
 	}
 
