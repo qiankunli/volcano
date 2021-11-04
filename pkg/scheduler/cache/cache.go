@@ -19,6 +19,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -67,8 +68,8 @@ func init() {
 }
 
 // New returns a Cache implementation.
-func New(config *rest.Config, schedulerName string, defaultQueue string) Cache {
-	return newSchedulerCache(config, schedulerName, defaultQueue)
+func New(config *rest.Config, schedulerName string, defaultQueue string, workNodeLabel string) Cache {
+	return newSchedulerCache(config, schedulerName, defaultQueue, workNodeLabel)
 }
 
 // SchedulerCache cache for the kube batch
@@ -79,7 +80,9 @@ type SchedulerCache struct {
 	vcClient     *vcclient.Clientset
 	defaultQueue string
 	// schedulerName is the name for volcano scheduler
-	schedulerName string
+	schedulerName      string
+	workNodeLabelName  string
+	workNodeLabelValue string
 
 	podInformer                infov1.PodInformer
 	nodeInformer               infov1.NodeInformer
@@ -314,7 +317,7 @@ func (pgb *podgroupBinder) Bind(job *schedulingapi.JobInfo, cluster string) (*sc
 	return job, nil
 }
 
-func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue string) *SchedulerCache {
+func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue string, workNodeLabel string) *SchedulerCache {
 	kubeClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		panic(fmt.Sprintf("failed init kubeClient, with err: %v", err))
@@ -359,7 +362,13 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 
 		NodeList: []string{},
 	}
-
+	if workNodeLabelLen := len(workNodeLabel); workNodeLabelLen > 0 {
+		index := strings.Index(workNodeLabel, ":")
+		if index > 0 && index < (workNodeLabelLen-1) {
+			sc.workNodeLabelName = strings.TrimSpace(workNodeLabel[:index])
+			sc.workNodeLabelValue = strings.TrimSpace(workNodeLabel[index+1:])
+		}
+	}
 	// Prepare event clients.
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: eventClient.CoreV1().Events("")})
@@ -390,10 +399,28 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 	// create informer for node information
 	sc.nodeInformer = informerFactory.Core().V1().Nodes()
 	sc.nodeInformer.Informer().AddEventHandlerWithResyncPeriod(
-		cache.ResourceEventHandlerFuncs{
-			AddFunc:    sc.AddNode,
-			UpdateFunc: sc.UpdateNode,
-			DeleteFunc: sc.DeleteNode,
+		cache.FilteringResourceEventHandler{
+			FilterFunc: func(obj interface{}) bool {
+				if len(sc.workNodeLabelName) == 0 {
+					return true
+				}
+				node, ok := obj.(*v1.Node)
+				if !ok {
+					klog.Errorf("Cannot convert to *v1.Node: %v", obj)
+					return false
+				}
+				labelValue, ok := node.Labels[sc.workNodeLabelName]
+				if ok && strings.Compare(sc.workNodeLabelValue, labelValue) == 0 {
+					return true
+				}
+				klog.Infof("node %s has not label %v:%v, ignore add/update/delete into schedulerCache", node.Name, sc.workNodeLabelName, sc.workNodeLabelValue)
+				return false
+			},
+			Handler: cache.ResourceEventHandlerFuncs{
+				AddFunc:    sc.AddNode,
+				UpdateFunc: sc.UpdateNode,
+				DeleteFunc: sc.DeleteNode,
+			},
 		},
 		0,
 	)
