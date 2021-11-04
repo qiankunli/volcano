@@ -77,7 +77,7 @@ func Run(opt *options.ServerOption) error {
 		opt.SchedulerConf,
 		opt.SchedulePeriod,
 		opt.DefaultQueue,
-		opt.WorkNodeLabel)
+		opt.WorkNodeLabels)
 	if err != nil {
 		panic(err)
 	}
