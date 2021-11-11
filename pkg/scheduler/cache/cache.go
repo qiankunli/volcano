@@ -441,7 +441,7 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 					klog.Errorf("Cannot convert to *v1.Node: %v", obj)
 					return false
 				}
-				if !responsibleForNode(node.Name, mySchedulerPodName, c){
+				if !responsibleForNode(node.Name, mySchedulerPodName, c) {
 					return false
 				}
 				if len(sc.workNodeLabels) == 0 {
