@@ -28,9 +28,9 @@ tiers:
 `
 
 type SchedulerConfig struct {
-	once           sync.Once
-	schedulerConf  string
-	fileWatcher    filewatcher.FileWatcher
+	once          sync.Once
+	schedulerConf string
+	fileWatcher   filewatcher.FileWatcher
 	// should be private
 	Plugins        []Tier
 	Configurations []Configuration
