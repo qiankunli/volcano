@@ -305,6 +305,20 @@ func (sc *SchedulerCache) deleteNode(node *v1.Node) error {
 	return nil
 }
 
+func (sc *SchedulerCache) useNode(node *v1.Node) bool {
+	if len(sc.nodeSelector) == 0 {
+		return true
+	}
+	for labelName, labelValue := range node.Labels {
+		key := labelName + ":" + labelValue
+		if _, ok := sc.nodeSelector[key]; ok {
+			return true
+		}
+	}
+	klog.Infof("node %s ignore add/update/delete into schedulerCache", node.Name)
+	return false
+}
+
 // AddNode add node to scheduler cache
 func (sc *SchedulerCache) AddNode(obj interface{}) {
 	node, ok := obj.(*v1.Node)
@@ -316,6 +330,9 @@ func (sc *SchedulerCache) AddNode(obj interface{}) {
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
 
+	if !sc.useNode(node) {
+		return
+	}
 	err := sc.addNode(node)
 	if err != nil {
 		klog.Errorf("Failed to add node %s into cache: %v", node.Name, err)
@@ -340,6 +357,9 @@ func (sc *SchedulerCache) UpdateNode(oldObj, newObj interface{}) {
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
 
+	if !sc.useNode(newNode) {
+		return
+	}
 	err := sc.updateNode(oldNode, newNode)
 	if err != nil {
 		klog.Errorf("Failed to update node %v in cache: %v", oldNode.Name, err)

@@ -16,7 +16,17 @@ limitations under the License.
 
 package plugins
 
-import "volcano.sh/volcano/pkg/scheduler/conf"
+import (
+	"volcano.sh/volcano/pkg/scheduler/conf"
+)
+
+func ApplyPluginConf(tiers []conf.Tier) {
+	for _, tier := range tiers {
+		for _, plugin := range tier.Plugins {
+			ApplyPluginConfDefaults(&plugin)
+		}
+	}
+}
 
 // ApplyPluginConfDefaults sets option's filed to its default value if not set
 func ApplyPluginConfDefaults(option *conf.PluginOption) {

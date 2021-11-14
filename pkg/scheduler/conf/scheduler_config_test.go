@@ -14,14 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package scheduler
+package conf
 
 import (
 	"reflect"
 	"testing"
-
-	_ "volcano.sh/volcano/pkg/scheduler/actions"
-	"volcano.sh/volcano/pkg/scheduler/conf"
 )
 
 func TestLoadSchedulerConf(t *testing.T) {
@@ -37,12 +34,15 @@ tiers:
   - name: predicates
   - name: proportion
   - name: nodeorder
+nodeSelector:
+  app: app1
+  demo: demo1,demo2
 `
 
 	trueValue := true
-	expectedTiers := []conf.Tier{
+	expectedTiers := []Tier{
 		{
-			Plugins: []conf.PluginOption{
+			Plugins: []PluginOption{
 				{
 					Name:                  "priority",
 					EnabledJobOrder:       &trueValue,
@@ -103,7 +103,7 @@ tiers:
 			},
 		},
 		{
-			Plugins: []conf.PluginOption{
+			Plugins: []PluginOption{
 				{
 					Name:                  "drf",
 					EnabledJobOrder:       &trueValue,
@@ -183,10 +183,15 @@ tiers:
 			},
 		},
 	}
+	expectedNodeSelector := map[string]string{
+		"app:app1":   "",
+		"demo:demo1": "",
+		"demo:demo2": "",
+	}
 
-	var expectedConfigurations []conf.Configuration
+	var expectedConfigurations []Configuration
 
-	_, tiers, configurations, err := unmarshalSchedulerConf(configuration)
+	_, tiers, configurations, nodeSelector, err := unmarshalSchedulerConf(configuration)
 	if err != nil {
 		t.Errorf("Failed to load scheduler configuration: %v", err)
 	}
@@ -196,6 +201,10 @@ tiers:
 	}
 	if !reflect.DeepEqual(configurations, expectedConfigurations) {
 		t.Errorf("Wrong configuration, expected: %+v, got %+v",
+			expectedConfigurations, configurations)
+	}
+	if !reflect.DeepEqual(nodeSelector, expectedNodeSelector) {
+		t.Errorf("Wrong nodeSelector, expected: %+v, got %+v",
 			expectedConfigurations, configurations)
 	}
 }

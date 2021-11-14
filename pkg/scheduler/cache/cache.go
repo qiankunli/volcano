@@ -23,6 +23,7 @@ import (
 	"k8s.io/api/scheduling/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -41,8 +42,8 @@ import (
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	volumescheduling "k8s.io/kubernetes/pkg/controller/volume/scheduling"
 	"os"
+	"reflect"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 	batch "volcano.sh/apis/pkg/apis/batch/v1alpha1"
@@ -54,9 +55,9 @@ import (
 	vcinformer "volcano.sh/apis/pkg/client/informers/externalversions"
 	cpuinformerv1 "volcano.sh/apis/pkg/client/informers/externalversions/nodeinfo/v1alpha1"
 	vcinformerv1 "volcano.sh/apis/pkg/client/informers/externalversions/scheduling/v1beta1"
-
 	"volcano.sh/volcano/cmd/scheduler/app/options"
 	schedulingapi "volcano.sh/volcano/pkg/scheduler/api"
+	"volcano.sh/volcano/pkg/scheduler/conf"
 	"volcano.sh/volcano/pkg/scheduler/metrics"
 )
 
@@ -69,8 +70,8 @@ func init() {
 }
 
 // New returns a Cache implementation.
-func New(config *rest.Config, schedulerName string, defaultQueue string, workNodeLabels []string) Cache {
-	return newSchedulerCache(config, schedulerName, defaultQueue, workNodeLabels)
+func New(config *rest.Config, schedulerName string, schedulerConfig *conf.SchedulerConfig, defaultQueue string) Cache {
+	return newSchedulerCache(config, schedulerName, schedulerConfig, defaultQueue)
 }
 
 // SchedulerCache cache for the kube batch
@@ -81,8 +82,9 @@ type SchedulerCache struct {
 	vcClient     *vcclient.Clientset
 	defaultQueue string
 	// schedulerName is the name for volcano scheduler
-	schedulerName  string
-	workNodeLabels map[string]string
+	schedulerName   string
+	schedulerConfig *conf.SchedulerConfig
+	nodeSelector    map[string]string
 
 	podInformer                infov1.PodInformer
 	nodeInformer               infov1.NodeInformer
@@ -334,7 +336,7 @@ func (pgb *podgroupBinder) Bind(job *schedulingapi.JobInfo, cluster string) (*sc
 	return job, nil
 }
 
-func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue string, workNodeLabels []string) *SchedulerCache {
+func newSchedulerCache(config *rest.Config, schedulerName string, schedulerConfig *conf.SchedulerConfig, defaultQueue string) *SchedulerCache {
 	kubeClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		panic(fmt.Sprintf("failed init kubeClient, with err: %v", err))
@@ -374,28 +376,13 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 		vcClient:            vcClient,
 		defaultQueue:        defaultQueue,
 		schedulerName:       schedulerName,
-		workNodeLabels:      make(map[string]string),
+		schedulerConfig:     schedulerConfig,
+		nodeSelector:        schedulerConfig.NodeSelector,
 		NamespaceCollection: make(map[string]*schedulingapi.NamespaceCollection),
 
 		NodeList: []string{},
 	}
-	if len(workNodeLabels) > 0 {
-		for _, workNodeLabel := range workNodeLabels {
-			workNodeLabelLen := len(workNodeLabel)
-			if workNodeLabelLen < 0 {
-				continue
-			}
-			index := strings.Index(workNodeLabel, ":")
-			if index < 0 || index >= (workNodeLabelLen-1) {
-				continue
-			}
-			workNodeLabelName := strings.TrimSpace(workNodeLabel[:index])
-			workNodeLabelValue := strings.TrimSpace(workNodeLabel[index+1:])
-			key := workNodeLabelName + ":" + workNodeLabelValue
-			sc.workNodeLabels[key] = ""
-		}
 
-	}
 	// Prepare event clients.
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: eventClient.CoreV1().Events("")})
@@ -444,17 +431,7 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 				if !responsibleForNode(node.Name, mySchedulerPodName, c) {
 					return false
 				}
-				if len(sc.workNodeLabels) == 0 {
-					return true
-				}
-				for labelName, labelValue := range node.Labels {
-					key := labelName + ":" + labelValue
-					if _, ok := sc.workNodeLabels[key]; ok {
-						return true
-					}
-				}
-				klog.Infof("node %s ignore add/update/delete into schedulerCache", node.Name)
-				return false
+				return true
 			},
 			Handler: cache.ResourceEventHandlerFuncs{
 				AddFunc:    sc.AddNode,
@@ -464,6 +441,27 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 		},
 		0,
 	)
+
+	handler := func(config *conf.SchedulerConfig) {
+		if reflect.DeepEqual(sc.nodeSelector, config.NodeSelector) {
+			klog.Infof("nodeSelector is not change,ignore...")
+			return
+		}
+		klog.Infof("nodeSelector is change, update nodeList")
+		nodes, err := sc.nodeInformer.Lister().List(labels.NewSelector())
+		if err != nil {
+			klog.Errorf("list nodes error!")
+			return
+		}
+		sc.NodeList = make([]string, 0)
+		sc.Nodes = make(map[string]*schedulingapi.NodeInfo)
+		sc.nodeSelector = config.NodeSelector
+		for _, node := range nodes {
+			sc.AddNode(node)
+		}
+		klog.Infof("new node list %v", sc.NodeList)
+	}
+	sc.schedulerConfig.AddConfigChangeHandler(handler)
 
 	sc.podInformer = informerFactory.Core().V1().Pods()
 	sc.pvcInformer = informerFactory.Core().V1().PersistentVolumeClaims()
