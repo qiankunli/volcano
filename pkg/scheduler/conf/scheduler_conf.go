@@ -23,7 +23,7 @@ type SchedulerConfiguration struct {
 	// Tiers defines plugins in different tiers
 	Tiers []Tier `yaml:"tiers"`
 	// Configurations is configuration for actions
-	Configurations []Configuration   `yaml:"configurations"`
+	Configurations []Configuration `yaml:"configurations"`
 	// volcano only work with the labeled node
 	NodeSelector map[string]string `yaml:"nodeSelector"`
 }
