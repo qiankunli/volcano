@@ -19,6 +19,11 @@ package cache
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
+	"sync"
+	"time"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/scheduling/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -54,7 +59,6 @@ import (
 	vcinformer "volcano.sh/apis/pkg/client/informers/externalversions"
 	cpuinformerv1 "volcano.sh/apis/pkg/client/informers/externalversions/nodeinfo/v1alpha1"
 	vcinformerv1 "volcano.sh/apis/pkg/client/informers/externalversions/scheduling/v1beta1"
-
 	"volcano.sh/volcano/cmd/scheduler/app/options"
 	schedulingapi "volcano.sh/volcano/pkg/scheduler/api"
 	"volcano.sh/volcano/pkg/scheduler/metrics"
@@ -119,7 +123,8 @@ type SchedulerCache struct {
 	errTasks    workqueue.RateLimitingInterface
 	deletedJobs workqueue.RateLimitingInterface
 
-	informerFactory informers.SharedInformerFactory
+	informerFactory   informers.SharedInformerFactory
+	vcInformerFactory vcinformer.SharedInformerFactory
 
 	BindFlowChannel chan *schedulingapi.TaskInfo
 	bindCache       []*schedulingapi.TaskInfo
@@ -517,12 +522,14 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 			},
 		})
 
-	sc.pcInformer = informerFactory.Scheduling().V1beta1().PriorityClasses()
-	sc.pcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    sc.AddPriorityClass,
-		UpdateFunc: sc.UpdatePriorityClass,
-		DeleteFunc: sc.DeletePriorityClass,
-	})
+	if options.ServerOpts.EnablePriorityClass {
+		sc.pcInformer = informerFactory.Scheduling().V1beta1().PriorityClasses()
+		sc.pcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    sc.AddPriorityClass,
+			UpdateFunc: sc.UpdatePriorityClass,
+			DeleteFunc: sc.DeletePriorityClass,
+		})
+	}
 
 	sc.quotaInformer = informerFactory.Core().V1().ResourceQuotas()
 	sc.quotaInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -532,6 +539,7 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 	})
 
 	vcinformers := vcinformer.NewSharedInformerFactory(sc.vcClient, 0)
+	sc.vcInformerFactory = vcinformers
 
 	// create informer for PodGroup(v1beta1) information
 	sc.podGroupInformerV1beta1 = vcinformers.Scheduling().V1beta1().PodGroups()
@@ -571,20 +579,8 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 
 // Run  starts the schedulerCache
 func (sc *SchedulerCache) Run(stopCh <-chan struct{}) {
-	go sc.podInformer.Informer().Run(stopCh)
-	go sc.nodeInformer.Informer().Run(stopCh)
-	go sc.podGroupInformerV1beta1.Informer().Run(stopCh)
-	go sc.pvInformer.Informer().Run(stopCh)
-	go sc.pvcInformer.Informer().Run(stopCh)
-	go sc.scInformer.Informer().Run(stopCh)
-	go sc.queueInformerV1beta1.Informer().Run(stopCh)
-	go sc.quotaInformer.Informer().Run(stopCh)
-	go sc.cpuInformer.Informer().Run(stopCh)
-
-	if options.ServerOpts.EnablePriorityClass {
-		go sc.pcInformer.Informer().Run(stopCh)
-	}
-
+	sc.informerFactory.Start(stopCh)
+	sc.vcInformerFactory.Start(stopCh)
 	// Re-sync error tasks.
 	go wait.Until(sc.processResyncTask, 0, stopCh)
 
@@ -595,26 +591,9 @@ func (sc *SchedulerCache) Run(stopCh <-chan struct{}) {
 }
 
 // WaitForCacheSync sync the cache with the api server
-func (sc *SchedulerCache) WaitForCacheSync(stopCh <-chan struct{}) bool {
-	return cache.WaitForCacheSync(stopCh,
-		func() []cache.InformerSynced {
-			informerSynced := []cache.InformerSynced{
-				sc.podInformer.Informer().HasSynced,
-				sc.podGroupInformerV1beta1.Informer().HasSynced,
-				sc.nodeInformer.Informer().HasSynced,
-				sc.pvInformer.Informer().HasSynced,
-				sc.pvcInformer.Informer().HasSynced,
-				sc.scInformer.Informer().HasSynced,
-				sc.queueInformerV1beta1.Informer().HasSynced,
-				sc.quotaInformer.Informer().HasSynced,
-				sc.cpuInformer.Informer().HasSynced,
-			}
-			if options.ServerOpts.EnablePriorityClass {
-				informerSynced = append(informerSynced, sc.pcInformer.Informer().HasSynced)
-			}
-			return informerSynced
-		}()...,
-	)
+func (sc *SchedulerCache) WaitForCacheSync(stopCh <-chan struct{}) {
+	sc.informerFactory.WaitForCacheSync(stopCh)
+	sc.vcInformerFactory.WaitForCacheSync(stopCh)
 }
 
 // findJobAndTask returns job and the task info
