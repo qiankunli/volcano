@@ -69,8 +69,8 @@ func init() {
 }
 
 // New returns a Cache implementation.
-func New(config *rest.Config, schedulerName string, defaultQueue string, workNodeLabels []string) Cache {
-	return newSchedulerCache(config, schedulerName, defaultQueue, workNodeLabels)
+func New(config *rest.Config, schedulerName string, defaultQueue string, nodeSelector []string) Cache {
+	return newSchedulerCache(config, schedulerName, defaultQueue, nodeSelector)
 }
 
 // SchedulerCache cache for the kube batch
@@ -81,8 +81,8 @@ type SchedulerCache struct {
 	vcClient     *vcclient.Clientset
 	defaultQueue string
 	// schedulerName is the name for volcano scheduler
-	schedulerName  string
-	workNodeLabels map[string]string
+	schedulerName      string
+	nodeSelectorLabels map[string]string
 
 	podInformer                infov1.PodInformer
 	nodeInformer               infov1.NodeInformer
@@ -334,7 +334,7 @@ func (pgb *podgroupBinder) Bind(job *schedulingapi.JobInfo, cluster string) (*sc
 	return job, nil
 }
 
-func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue string, workNodeLabels []string) *SchedulerCache {
+func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue string, nodeSelector []string) *SchedulerCache {
 	kubeClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		panic(fmt.Sprintf("failed init kubeClient, with err: %v", err))
@@ -374,25 +374,26 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 		vcClient:            vcClient,
 		defaultQueue:        defaultQueue,
 		schedulerName:       schedulerName,
-		workNodeLabels:      make(map[string]string),
+		nodeSelectorLabels:  make(map[string]string),
 		NamespaceCollection: make(map[string]*schedulingapi.NamespaceCollection),
 
 		NodeList: []string{},
 	}
-	if len(workNodeLabels) > 0 {
-		for _, workNodeLabel := range workNodeLabels {
-			workNodeLabelLen := len(workNodeLabel)
-			if workNodeLabelLen < 0 {
+	if len(nodeSelector) > 0 {
+		for _, nodeSelectorLabel := range nodeSelector {
+			nodeSelectorLabelLen := len(nodeSelectorLabel)
+			if nodeSelectorLabelLen <= 0 {
 				continue
 			}
-			index := strings.Index(workNodeLabel, ":")
-			if index < 0 || index >= (workNodeLabelLen-1) {
+			//sc.nodeSelectorLabels[nodeSelectorLabel] = ""
+			index := strings.Index(nodeSelectorLabel, ":")
+			if index < 0 || index >= (nodeSelectorLabelLen-1) {
 				continue
 			}
-			workNodeLabelName := strings.TrimSpace(workNodeLabel[:index])
-			workNodeLabelValue := strings.TrimSpace(workNodeLabel[index+1:])
-			key := workNodeLabelName + ":" + workNodeLabelValue
-			sc.workNodeLabels[key] = ""
+			nodeSelectorLabelName := strings.TrimSpace(nodeSelectorLabel[:index])
+			nodeSelectorLabelValue := strings.TrimSpace(nodeSelectorLabel[index+1:])
+			key := nodeSelectorLabelName + ":" + nodeSelectorLabelValue
+			sc.nodeSelectorLabels[key] = ""
 		}
 
 	}
@@ -444,12 +445,12 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 				if !responsibleForNode(node.Name, mySchedulerPodName, c) {
 					return false
 				}
-				if len(sc.workNodeLabels) == 0 {
+				if len(sc.nodeSelectorLabels) == 0 {
 					return true
 				}
 				for labelName, labelValue := range node.Labels {
 					key := labelName + ":" + labelValue
-					if _, ok := sc.workNodeLabels[key]; ok {
+					if _, ok := sc.nodeSelectorLabels[key]; ok {
 						return true
 					}
 				}
