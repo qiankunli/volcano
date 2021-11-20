@@ -386,6 +386,7 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 				continue
 			}
 			//sc.nodeSelectorLabels[nodeSelectorLabel] = ""
+			// check input
 			index := strings.Index(nodeSelectorLabel, ":")
 			if index < 0 || index >= (nodeSelectorLabelLen-1) {
 				continue
