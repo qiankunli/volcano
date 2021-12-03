@@ -19,10 +19,6 @@ package cache
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
-	"sync"
-	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/scheduling/v1beta1"

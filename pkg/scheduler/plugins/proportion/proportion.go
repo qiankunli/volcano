@@ -136,6 +136,9 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 	// Record metrics
 	for _, attr := range pp.queueOpts {
 		metrics.UpdateQueueAllocated(attr.name, attr.allocated.MilliCPU, attr.allocated.Memory)
+		metrics.UpdateQueueAllocatable(attr.name, attr.realCapability.MilliCPU-attr.allocated.MilliCPU,
+			attr.realCapability.Memory-attr.allocated.Memory,
+			attr.realCapability.Get("nvidia.com/gpu")-attr.allocated.Get("nvidia.com/gpu"))
 		metrics.UpdateQueueRequest(attr.name, attr.request.MilliCPU, attr.request.Memory)
 		metrics.UpdateQueueWeight(attr.name, attr.weight)
 		queue := ssn.Queues[attr.queueID]

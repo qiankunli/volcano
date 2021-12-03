@@ -37,6 +37,27 @@ var (
 			Help:      "Allocated memory for one queue",
 		}, []string{"queue_name"},
 	)
+	queueAllocatableMilliCPU = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: VolcanoNamespace,
+			Name:      "queue_allocatable_milli_cpu",
+			Help:      "Allocatable CPU count for one queue",
+		}, []string{"queue_name"},
+	)
+	queueAllocatableMemory = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: VolcanoNamespace,
+			Name:      "queue_allocatable_memory_bytes",
+			Help:      "Allocatable memory count for one queue",
+		}, []string{"queue_name"},
+	)
+	queueAllocatableMilliGPU = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Subsystem: VolcanoNamespace,
+			Name:      "queue_allocatable_milli_gpu",
+			Help:      "Allocatable GPU count for one queue",
+		}, []string{"queue_name"},
+	)
 
 	queueRequestMilliCPU = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -131,6 +152,13 @@ var (
 func UpdateQueueAllocated(queueName string, milliCPU, memory float64) {
 	queueAllocatedMilliCPU.WithLabelValues(queueName).Set(milliCPU)
 	queueAllocatedMemory.WithLabelValues(queueName).Set(memory)
+}
+
+// UpdateQueueAllocated records allocated resources for one queue
+func UpdateQueueAllocatable(queueName string, milliCPU, memory, milliGPU float64) {
+	queueAllocatableMilliCPU.WithLabelValues(queueName).Set(milliCPU)
+	queueAllocatableMemory.WithLabelValues(queueName).Set(memory)
+	queueAllocatableMilliGPU.WithLabelValues(queueName).Set(milliGPU)
 }
 
 // UpdateQueueRequest records request resources for one queue
