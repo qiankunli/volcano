@@ -50,6 +50,7 @@ func (ra *Action) Execute(ssn *framework.Session) {
 		len(ssn.Jobs), len(ssn.Queues))
 
 	clearStarvedJobInOverusedQueue(ssn)
+	clearElasticTaskInOverusedQueue(ssn)
 
 	for _, job := range ssn.Jobs {
 		if job.IsPending() {
@@ -194,6 +195,40 @@ func (ra *Action) Execute(ssn *framework.Session) {
 			jobs.Push(job)
 		}
 		queues.Push(queue)
+	}
+}
+//todo merge with clearStarvedJobInOverusedQueue
+func clearElasticTaskInOverusedQueue(ssn *framework.Session) {
+	for _, job := range ssn.Jobs {
+		queue := ssn.Queues[job.Queue]
+		if !ssn.Overused(queue) {
+			continue
+		}
+		elasticNum := job.ElasticTaskNum()
+		if elasticNum <= 0 {
+			continue
+		}
+		victimTasks := util.NewPriorityQueue(ssn.TaskOrderFn)
+		// sort task
+		for status, tasks := range job.TaskStatusIndex {
+			if !api.AllocatedStatus(status) {
+				continue
+			}
+			for _, t := range tasks {
+				victimTasks.Push(t)
+			}
+		}
+		for elasticNum > 0 || victimTasks.Empty(){
+			t := victimTasks.Pop().(*api.TaskInfo)
+			klog.Errorf("Try to reclaim Task <%s/%s> because job <%v> is elastic and queue <%v> is overused",
+				t.Namespace, t.Name, job.Name, queue.Name)
+			if err := ssn.Evict(t, "reclaim"); err != nil {
+				klog.Errorf("Failed to reclaim Task <%s/%s>: %v",
+					t.Namespace, t.Name, err)
+				continue
+			}
+			elasticNum--
+		}
 	}
 }
 

@@ -17,10 +17,9 @@ limitations under the License.
 package proportion
 
 import (
-	"reflect"
-
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog"
+	"reflect"
 
 	"volcano.sh/apis/pkg/apis/scheduling"
 	"volcano.sh/volcano/pkg/scheduler/api"
@@ -50,11 +49,16 @@ type queueAttr struct {
 	deserved  *api.Resource
 	allocated *api.Resource
 	request   *api.Resource
+	elastic   *api.Resource
 	// inqueue represents the resource request of the inqueue job
 	inqueue        *api.Resource
 	capability     *api.Resource
 	realCapability *api.Resource
 	guarantee      *api.Resource
+}
+
+func (attr *queueAttr) AllocatableResources() *api.Resource {
+	return attr.realCapability.Clone().Sub(attr.allocated).Sub(attr.inqueue).Add(attr.elastic)
 }
 
 // New return proportion action
@@ -98,6 +102,7 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 				request:   api.EmptyResource(),
 				inqueue:   api.EmptyResource(),
 				guarantee: api.EmptyResource(),
+				elastic:   api.EmptyResource(),
 			}
 			if len(queue.Queue.Spec.Capability) != 0 {
 				attr.capability = api.NewResource(queue.Queue.Spec.Capability)
@@ -111,6 +116,7 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 			} else {
 				attr.realCapability = helpers.Min(realCapability, attr.capability)
 			}
+			attr.elastic.Add(job.GetElasticResources())
 			pp.queueOpts[job.Queue] = attr
 			klog.V(4).Infof("Added Queue <%s> attributes.", job.Queue)
 		}
@@ -261,8 +267,8 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 	ssn.AddOverusedFn(pp.Name(), func(obj interface{}) bool {
 		queue := obj.(*api.QueueInfo)
 		attr := pp.queueOpts[queue.UID]
-
-		overused := attr.deserved.LessEqual(attr.allocated, api.Zero)
+		// todo is equal means overused
+		overused := attr.deserved.Less(attr.allocated, api.Zero)
 		metrics.UpdateQueueOverused(attr.name, overused)
 		if overused {
 			klog.V(3).Infof("Queue <%v>: deserved <%v>, allocated <%v>, share <%v>",
@@ -294,6 +300,16 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 		return underUsedResNames
 	})
 
+	ssn.AddUnderElasticResourceFn(pp.Name(), func(queue *api.QueueInfo) *api.Resource {
+		attr := pp.queueOpts[queue.UID]
+		return attr.elastic.Clone()
+	})
+
+	ssn.AddUnderAllocatableResourceFns(pp.Name(), func(queue *api.QueueInfo) *api.Resource {
+		attr := pp.queueOpts[queue.UID]
+		return attr.AllocatableResources()
+	})
+
 	ssn.AddJobEnqueueableFn(pp.Name(), func(obj interface{}) int {
 		job := obj.(*api.JobInfo)
 		queueID := job.Queue
@@ -316,8 +332,9 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 		klog.V(5).Infof("queue %s capability <%s>", queue.Name, attr.realCapability.String())
 		klog.V(5).Infof("queue %s inqueue <%s>", queue.Name, attr.inqueue.String())
 		klog.V(5).Infof("queue %s allocated <%s>", queue.Name, attr.allocated.String())
+		klog.V(5).Infof("queue %s elastic <%s>", queue.Name, attr.elastic.String())
 		// The queue resource quota limit has not reached
-		inqueue := minReq.Add(attr.allocated).Add(attr.inqueue).LessEqual(attr.realCapability, api.Zero)
+		inqueue := minReq.Add(attr.allocated).Add(attr.inqueue).Sub(attr.elastic).LessEqual(attr.realCapability, api.Zero)
 		klog.V(5).Infof("job %s inqueue %v", job.Name, inqueue)
 		if inqueue {
 			attr.inqueue.Add(job.GetMinResources())

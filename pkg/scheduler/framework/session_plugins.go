@@ -108,6 +108,16 @@ func (ssn *Session) AddUnderusedResourceFn(name string, fn api.UnderUsedResource
 	ssn.underUsedFns[name] = fn
 }
 
+// AddUnderElasticResourceFn add underElastic function
+func (ssn *Session) AddUnderElasticResourceFn(name string, fn api.UnderElasticResourceFn) {
+	ssn.underElasticFns[name] = fn
+}
+
+// AddUnderElasticResourceFn add underElastic function
+func (ssn *Session) AddUnderAllocatableResourceFns(name string, fn api.UnderAllocatableResourceFn) {
+	ssn.underAllocatableFns[name] = fn
+}
+
 // AddJobValidFn add jobvalid function
 func (ssn *Session) AddJobValidFn(name string, fn api.ValidateExFn) {
 	ssn.jobValidFns[name] = fn
@@ -282,6 +292,37 @@ func (ssn *Session) UnderusedResources(queue *api.QueueInfo) api.ResourceNameLis
 	}
 
 	return api.ResourceNameList{}
+}
+func (ssn *Session) UnderElasticResources(queue *api.QueueInfo) *api.Resource {
+	for _, tier := range ssn.Tiers {
+		for _, plugin := range tier.Plugins {
+			elasticResourceFns, found := ssn.underElasticFns[plugin.Name]
+			if !found{
+				continue
+			}
+			elasticResource := elasticResourceFns(queue)
+			if !elasticResource.IsEmpty() {
+				return elasticResource
+			}
+		}
+	}
+	return api.EmptyResource()
+}
+
+func (ssn *Session) UnderAllocatableResources(queue *api.QueueInfo) *api.Resource {
+	for _, tier := range ssn.Tiers {
+		for _, plugin := range tier.Plugins {
+			alocatableResourceFns, found := ssn.underAllocatableFns[plugin.Name]
+			if !found{
+				continue
+			}
+			allocatableResource := alocatableResourceFns(queue)
+			if !allocatableResource.IsEmpty() {
+				return allocatableResource
+			}
+		}
+	}
+	return api.EmptyResource()
 }
 
 // JobReady invoke jobready function of the plugins

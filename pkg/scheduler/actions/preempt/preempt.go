@@ -70,6 +70,14 @@ func (alloc *Action) Execute(ssn *framework.Session) {
 			if _, found := preemptorsMap[job.Queue]; !found {
 				preemptorsMap[job.Queue] = util.NewPriorityQueue(ssn.JobOrderFn)
 			}
+			queue := ssn.Queues[job.Queue]
+			elasticResourceInQueue := ssn.UnderElasticResources(queue)
+			// check if elastic resource in queue can run job
+			if job.Allocated.IsEmpty() && elasticResourceInQueue.Less(job.GetMinResources(), api.Zero) {
+				klog.V(3).Infof("elastic resource in Queue <%s> is <%v>, can not run for Job <%s/%s> minResources <%v>",
+					queue.Name, elasticResourceInQueue, job.Namespace, job.Name, job.GetMinResources())
+				continue
+			}
 			preemptorsMap[job.Queue].Push(job)
 			underRequest = append(underRequest, job)
 			preemptorTasks[job.UID] = util.NewPriorityQueue(ssn.TaskOrderFn)
