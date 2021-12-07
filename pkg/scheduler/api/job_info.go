@@ -502,7 +502,7 @@ func (ji *JobInfo) Clone() *JobInfo {
 		Allocated:      EmptyResource(),
 		TotalRequest:   EmptyResource(),
 
-		PodGroup: ji.PodGroup,
+		PodGroup: ji.PodGroup.Clone(),
 
 		TaskStatusIndex:       map[TaskStatus]tasksMap{},
 		TaskMinAvailable:      ji.TaskMinAvailable,
