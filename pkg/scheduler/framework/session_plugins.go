@@ -678,7 +678,7 @@ func (ssn *Session) TaskOrderFn(l, r interface{}) bool {
 	lv := l.(*api.TaskInfo)
 	rv := r.(*api.TaskInfo)
 	if lv.Pod.CreationTimestamp.Equal(&rv.Pod.CreationTimestamp) {
-		return lv.UID < rv.UID
+		return lv.Name < rv.Name
 	}
 	return lv.Pod.CreationTimestamp.Before(&rv.Pod.CreationTimestamp)
 }

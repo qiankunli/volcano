@@ -197,6 +197,7 @@ func (ra *Action) Execute(ssn *framework.Session) {
 		queues.Push(queue)
 	}
 }
+
 //todo merge with clearStarvedJobInOverusedQueue
 func clearElasticTaskInOverusedQueue(ssn *framework.Session) {
 	for _, job := range ssn.Jobs {
@@ -208,18 +209,20 @@ func clearElasticTaskInOverusedQueue(ssn *framework.Session) {
 		if elasticNum <= 0 {
 			continue
 		}
-		victimTasks := util.NewPriorityQueue(ssn.TaskOrderFn)
+		reclaimees := util.NewPriorityQueue(func(l interface{}, r interface{}) bool {
+			return !ssn.TaskOrderFn(l, r)
+		})
 		// sort task
 		for status, tasks := range job.TaskStatusIndex {
 			if !api.AllocatedStatus(status) {
 				continue
 			}
 			for _, t := range tasks {
-				victimTasks.Push(t)
+				reclaimees.Push(t)
 			}
 		}
-		for elasticNum > 0 || victimTasks.Empty(){
-			t := victimTasks.Pop().(*api.TaskInfo)
+		for elasticNum > 0 && !reclaimees.Empty() {
+			t := reclaimees.Pop().(*api.TaskInfo)
 			klog.Errorf("Try to reclaim Task <%s/%s> because job <%v> is elastic and queue <%v> is overused",
 				t.Namespace, t.Name, job.Name, queue.Name)
 			if err := ssn.Evict(t, "reclaim"); err != nil {
