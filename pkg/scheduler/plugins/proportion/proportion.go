@@ -17,9 +17,9 @@ limitations under the License.
 package proportion
 
 import (
-	"math"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog"
+	"math"
 	"reflect"
 
 	"volcano.sh/apis/pkg/apis/scheduling"
