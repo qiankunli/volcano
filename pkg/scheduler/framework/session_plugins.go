@@ -312,11 +312,11 @@ func (ssn *Session) UnderElasticResources(queue *api.QueueInfo) *api.Resource {
 func (ssn *Session) UnderAllocatableResources(queue *api.QueueInfo) *api.Resource {
 	for _, tier := range ssn.Tiers {
 		for _, plugin := range tier.Plugins {
-			alocatableResourceFns, found := ssn.underAllocatableFns[plugin.Name]
+			allocatableResourceFns, found := ssn.underAllocatableFns[plugin.Name]
 			if !found{
 				continue
 			}
-			allocatableResource := alocatableResourceFns(queue)
+			allocatableResource := allocatableResourceFns(queue)
 			if !allocatableResource.IsEmpty() {
 				return allocatableResource
 			}

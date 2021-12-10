@@ -90,7 +90,7 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 	klog.V(4).Infof("The total guarantee resource is <%v>", pp.totalGuarantee)
 	// Build attributes for Queues.
 	for _, job := range ssn.Jobs {
-		klog.V(4).Infof("Considering Job <%s/%s>.", job.Namespace, job.Name)
+		klog.V(4).Infof("Considering Job <%s/%s> allocated <%v> minResources <%v> elastic <%v>.", job.Namespace, job.Name,job.Allocated,job.GetMinResources(), job.GetElasticResources())
 		if _, found := pp.queueOpts[job.Queue]; !found {
 			queue := ssn.Queues[job.Queue]
 			attr := &queueAttr{
@@ -123,7 +123,6 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 			} else {
 				attr.realCapability = helpers.Min(realCapability, attr.capability)
 			}
-			attr.elastic.Add(job.GetElasticResources())
 			pp.queueOpts[job.Queue] = attr
 			klog.V(4).Infof("Added Queue <%s> attributes.", job.Queue)
 		}
@@ -144,6 +143,7 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 		if job.PodGroup.Status.Phase == scheduling.PodGroupInqueue {
 			attr.inqueue.Add(job.GetMinResources())
 		}
+		attr.elastic.Add(job.GetElasticResources())
 	}
 
 	// Record metrics
@@ -209,8 +209,8 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 			attr.deserved = helpers.Max(attr.deserved, attr.guarantee)
 			pp.updateShare(attr)
 
-			klog.V(4).Infof("The attributes of queue <%s> in proportion: deserved <%v>, realCapability <%v>, allocate <%v>, request <%v>, share <%0.2f>",
-				attr.name, attr.deserved, attr.realCapability, attr.allocated, attr.request, attr.share)
+			klog.V(4).Infof("The attributes of queue <%s> in proportion: deserved <%v>, realCapability <%v>, allocate <%v>, request <%v>, elastic <%v>, share <%0.2f>",
+				attr.name, attr.deserved, attr.realCapability, attr.allocated, attr.request, attr.elastic, attr.share)
 
 			increased, decreased := attr.deserved.Diff(oldDeserved, api.Zero)
 			increasedDeserved.Add(increased)

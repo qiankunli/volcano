@@ -49,7 +49,7 @@ func (ra *Action) Execute(ssn *framework.Session) {
 	klog.V(3).Infof("There are <%d> Jobs and <%d> Queues in total for scheduling.",
 		len(ssn.Jobs), len(ssn.Queues))
 
-	clearStarvedJobInOverusedQueue(ssn)
+	clearStarvingJobInOverusedQueue(ssn)
 	clearElasticTaskInOverusedQueue(ssn)
 
 	for _, job := range ssn.Jobs {
@@ -198,15 +198,19 @@ func (ra *Action) Execute(ssn *framework.Session) {
 	}
 }
 
-//todo merge with clearStarvedJobInOverusedQueue
+//todo merge with clearStarvingJobInOverusedQueue
 func clearElasticTaskInOverusedQueue(ssn *framework.Session) {
+	klog.V(3).Infof("Enter clearElasticTaskInOverusedQueue ...")
+	defer klog.V(3).Infof("Leaving clearElasticTaskInOverusedQueue ...")
 	for _, job := range ssn.Jobs {
 		queue := ssn.Queues[job.Queue]
 		if !ssn.Overused(queue) {
+			klog.V(3).Infof("queue <%v> is not overused,ignore clear elastic task", job.Queue)
 			continue
 		}
 		elasticNum := job.ElasticTaskNum()
 		if elasticNum <= 0 {
+			klog.V(3).Infof("job <%v> elasticNum is <%v>,ignore clear elastic task", job.Name, elasticNum)
 			continue
 		}
 		reclaimees := util.NewPriorityQueue(func(l interface{}, r interface{}) bool {
@@ -221,7 +225,7 @@ func clearElasticTaskInOverusedQueue(ssn *framework.Session) {
 				reclaimees.Push(t)
 			}
 		}
-		for elasticNum > 0 && !reclaimees.Empty() {
+		for ssn.Overused(queue) && elasticNum > 0 && !reclaimees.Empty() {
 			t := reclaimees.Pop().(*api.TaskInfo)
 			klog.Errorf("Try to reclaim Task <%s/%s> because job <%v> is elastic and queue <%v> is overused",
 				t.Namespace, t.Name, job.Name, queue.Name)
@@ -235,9 +239,9 @@ func clearElasticTaskInOverusedQueue(ssn *framework.Session) {
 	}
 }
 
-func clearStarvedJobInOverusedQueue(ssn *framework.Session) {
-	klog.V(3).Infof("Enter clearStarvedJobInOverusedQueue ...")
-	defer klog.V(3).Infof("Leaving clearStarvedJobInOverusedQueue ...")
+func clearStarvingJobInOverusedQueue(ssn *framework.Session) {
+	klog.V(3).Infof("Enter clearStarvingJobInOverusedQueue ...")
+	defer klog.V(3).Infof("Leaving clearStarvingJobInOverusedQueue ...")
 	for _, job := range ssn.Jobs {
 		queue := ssn.Queues[job.Queue]
 		if job.ReadyTaskNum() >= job.MinAvailable || !ssn.Overused(queue) {
